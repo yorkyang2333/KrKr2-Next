@@ -15,6 +15,7 @@ vcpkg_cmake_configure(
         -DENABLE_CAT=OFF
         -DENABLE_CPIO=OFF
         -DENABLE_UNZIP=OFF
+        -DENABLE_LIBB2=OFF
 )
 
 vcpkg_cmake_install()

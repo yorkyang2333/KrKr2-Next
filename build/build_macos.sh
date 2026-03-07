@@ -15,6 +15,13 @@
 
 set -euo pipefail
 
+# Add Homebrew bison to PATH (if installed) to override older macOS default bison
+if [ -d "/opt/homebrew/opt/bison/bin" ]; then
+    export PATH="/opt/homebrew/opt/bison/bin:$PATH"
+elif [ -d "/usr/local/opt/bison/bin" ]; then
+    export PATH="/usr/local/opt/bison/bin:$PATH"
+fi
+
 # ============================================================
 # Configuration
 # ============================================================
