@@ -64,60 +64,58 @@ add_definitions(-D__STDC_CONSTANT_MACROS -DTJS_TEXT_OUT_CRLF)
 set(CUBISM_DIR ${CMAKE_CURRENT_SOURCE_DIR}/cubism)
 set(CUBISM_CORE_DIR ${CUBISM_DIR}/Core)
 set(CUBISM_FW_DIR ${CUBISM_DIR}/Framework)
+set(CUBISM_FW_SRC_DIR ${CUBISM_FW_DIR}/src)
 
 if (EXISTS ${CUBISM_FW_DIR} AND NOT IOS)
     target_sources(${PROJECT_NAME} PUBLIC krkrlive2d.cpp)
     file(GLOB_RECURSE CUBISM_FW_SOURCES
         ${CUBISM_FW_DIR}/*.cpp
     )
-    # Exclude non-OpenGL renderers (already removed from tree, but safety net)
-    list(FILTER CUBISM_FW_SOURCES EXCLUDE REGEX ".*/D3D9/.*|.*/D3D11/.*|.*/Vulkan/.*|.*/Metal/.*|.*/Cocos2d/.*")
+    # Exclude non-GLES2 renderers and unnecessary directories
+    list(FILTER CUBISM_FW_SOURCES EXCLUDE REGEX "/D3D9/|/D3D11/|/Vulkan/|/Metal/|/Cocos2d/|/N3DS/|/OpenGL3/")
 
     add_library(CubismFramework STATIC ${CUBISM_FW_SOURCES})
     target_include_directories(CubismFramework PUBLIC
         ${CUBISM_FW_DIR}
+        ${CUBISM_FW_SRC_DIR}
         ${CUBISM_CORE_DIR}/include
     )
     target_compile_definitions(CubismFramework PUBLIC CSM_TARGET_ANGLE_ES2)
-
-    # ANGLE headers for CubismFramework's OpenGLES2 renderer
-    find_package(unofficial-angle CONFIG QUIET)
-    if(unofficial-angle_FOUND)
-        target_link_libraries(CubismFramework PRIVATE
-            unofficial::angle::libEGL
-            unofficial::angle::libGLESv2
+    # Automatically inject GLES3 headers to avoid manual patches in the SDK
+    if(APPLE OR WIN32)
+        if(MSVC)
+            target_compile_options(CubismFramework PRIVATE "/FI\"GLES3/gl3.h\"" "/FI\"GLES2/gl2ext.h\"")
+        else()
+            target_compile_options(CubismFramework PRIVATE "-includeGLES3/gl3.h" "-includeGLES2/gl2ext.h")
+        endif()
+    endif()
+    
+    # Propagate GLES2 include paths to CubismFramework
+    if(VCPKG_INSTALLED_DIR AND VCPKG_TARGET_TRIPLET)
+        target_include_directories(CubismFramework PRIVATE
+            ${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/include
         )
-        # EGL/GLES2 headers come from egl-registry/opengl-registry via vcpkg
-        # but aren't automatically propagated to standalone static library targets.
-        get_target_property(_EGL_INCS unofficial::angle::libEGL INTERFACE_INCLUDE_DIRECTORIES)
-        if(_EGL_INCS)
-            target_include_directories(CubismFramework PRIVATE ${_EGL_INCS})
-        endif()
-        if(VCPKG_INSTALLED_DIR AND VCPKG_TARGET_TRIPLET)
-            target_include_directories(CubismFramework PRIVATE
-                ${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/include)
-        endif()
-    elseif(ANDROID)
-        target_link_libraries(CubismFramework PRIVATE EGL GLESv2)
     endif()
 
-    if(ANDROID)
-        set(CUBISM_CORE_ARCH ${CMAKE_ANDROID_ARCH_ABI})
-        set(CUBISM_CORE_LIB ${CUBISM_CORE_DIR}/lib/android/${CUBISM_CORE_ARCH}/libLive2DCubismCore.a)
-    elseif(IOS)
-        set(CUBISM_CORE_LIB ${CUBISM_CORE_DIR}/lib/ios/Release-iphoneos/libLive2DCubismCore.a)
-    elseif(APPLE)
+    if(APPLE AND NOT IOS)
         if(CMAKE_OSX_ARCHITECTURES STREQUAL "x86_64")
             set(CUBISM_CORE_LIB ${CUBISM_CORE_DIR}/lib/macos/x86_64/libLive2DCubismCore.a)
         else()
             set(CUBISM_CORE_LIB ${CUBISM_CORE_DIR}/lib/macos/arm64/libLive2DCubismCore.a)
         endif()
+    elseif(ANDROID)
+        set(CUBISM_CORE_ARCH ${CMAKE_ANDROID_ARCH_ABI})
+        set(CUBISM_CORE_LIB ${CUBISM_CORE_DIR}/lib/android/${CUBISM_CORE_ARCH}/libLive2DCubismCore.a)
+        target_link_libraries(CubismFramework PRIVATE EGL GLESv2)
     endif()
 
-    target_link_libraries(CubismFramework PUBLIC ${CUBISM_CORE_LIB})
+    if(EXISTS ${CUBISM_CORE_LIB})
+        target_link_libraries(CubismFramework PUBLIC ${CUBISM_CORE_LIB})
+    endif()
 
     target_include_directories(${PROJECT_NAME} PUBLIC
         ${CUBISM_FW_DIR}
+        ${CUBISM_FW_SRC_DIR}
         ${CUBISM_CORE_DIR}/include
     )
     target_compile_definitions(${PROJECT_NAME} PUBLIC CSM_TARGET_ANGLE_ES2)
@@ -127,7 +125,7 @@ else()
     message(WARNING "Live2D SDK not found in ${CUBISM_DIR} (or disabled). Skipping live2d plugin.")
 endif()
 
-target_include_directories(${PROJECT_NAME} PUBLIC ${KRKR2PLUGIN_PATH} ${KRKR2PLUGIN_PATH}/simplebinder})
+target_include_directories(${PROJECT_NAME} PUBLIC ${KRKR2PLUGIN_PATH} ${KRKR2PLUGIN_PATH}/simplebinder)
 target_link_libraries(${PROJECT_NAME} PUBLIC krkr2core)
 
 add_subdirectory(psdfile)

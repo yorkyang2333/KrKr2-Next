@@ -22,8 +22,7 @@ java_pid*.hprof
 .DS_Store
 *.pdb
 
-# Cubism SDK (proprietary binary, download from live2d.com)
-cpp/plugins/cubism/Core/lib/
-cpp/plugins/cubism/Framework/
+# Cubism SDK (proprietary binary/source, download from live2d.com)
+cpp/plugins/cubism/*
 bridge/flutter_engine_bridge/ios/Libs/*.a
 apps/flutter_app/devtools_options.yaml
