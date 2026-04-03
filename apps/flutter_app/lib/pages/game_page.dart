@@ -258,13 +258,21 @@ class _GamePageState extends State<GamePage> with WidgetsBindingObserver {
         ? path.substring(0, path.length - 1)
         : path;
 
-    // If the current directory already has startup.tjs, it IS the game
+    // If the current directory already has startup.tjs or data.xp3, it IS the game
     // root (or at least a valid project dir). Do NOT adjust.
-    for (final name in ['startup.tjs', 'Startup.tjs', 'STARTUP.TJS']) {
+    for (final name in [
+      'startup.tjs', 'Startup.tjs', 'STARTUP.TJS',
+      'data.xp3', 'Data.xp3', 'DATA.XP3'
+    ]) {
       if (await File('$clean/$name').exists()) {
         _log('Game path has $name — no adjustment needed');
         return path;
       }
+    }
+    if (await Directory(clean).exists() && 
+        await Directory(clean).list().any((e) => e.path.toLowerCase().endsWith('.xp3'))) {
+      _log('Game path has an .xp3 archive — no adjustment needed');
+      return path;
     }
 
     // If <path>/data/system/Initialize.tjs exists, this is already a
@@ -329,15 +337,29 @@ class _GamePageState extends State<GamePage> with WidgetsBindingObserver {
         return 'Game path does not exist: $path';
       }
 
-      // Accept either startup.tjs in root or data/system/initialize.tjs
+      // Accept startup.tjs, data/system/initialize.tjs, or .xp3 archives
       final startup = File('$path/startup.tjs');
+      final startupCap = File('$path/Startup.tjs');
+      final startupUp = File('$path/STARTUP.TJS');
       final init = File('$path/data/system/initialize.tjs');
       final initUpper = File('$path/data/system/Initialize.tjs');
+      final dataXp3 = File('$path/data.xp3');
+      final dataXp3Cap = File('$path/Data.xp3');
+      final dataXp3Up = File('$path/DATA.XP3');
+      
       if (!await startup.exists() &&
+          !await startupCap.exists() &&
+          !await startupUp.exists() &&
           !await init.exists() &&
-          !await initUpper.exists()) {
-        return 'Missing startup script in: $path\n'
-            '(looked for startup.tjs and data/system/initialize.tjs)';
+          !await initUpper.exists() &&
+          !await dataXp3.exists() &&
+          !await dataXp3Cap.exists() &&
+          !await dataXp3Up.exists()) {
+        final hasAnyXp3 = await dir.list().any((e) => e.path.toLowerCase().endsWith('.xp3'));
+        if (!hasAnyXp3) {
+          return 'Missing startup script or archive in: $path\n'
+              '(looked for startup.tjs, data/system/initialize.tjs, and data.xp3)';
+        }
       }
     } catch (e) {
       return 'Game path check failed: $e';

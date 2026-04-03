@@ -585,7 +585,7 @@ private:
         mosaicCpuScratch_.clear();
 
         if (GetModel()) {
-            GetModel()->ClearDrawableForceHiddenFlags();
+            // GetModel()->ClearDrawableForceHiddenFlags();
         }
         if (!GetModel() || !setting_) return;
 
@@ -674,7 +674,7 @@ private:
         const bool hideSourceMesh = !mosaicEffectEnabled_ || IsMosaicEnabled();
         for (csmInt32 drawableIndex : mosaicDrawableIndices_) {
             if (drawableIndex < 0) continue;
-            GetModel()->SetDrawableForceHidden(drawableIndex, hideSourceMesh);
+            // GetModel()->SetDrawableForceHidden(drawableIndex, hideSourceMesh);
         }
 
         if (mosaicParentPartIndices_.empty()) return;

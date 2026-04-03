@@ -1479,9 +1479,128 @@ bool TVPSaveStreamToFile(tTJSBinaryStream *st, tjs_uint64 offset,
 }
 
 //---------------------------------------------------------------------------
-// TVPAutoMountSiblingXP3Archives
+// TVPAutoMountProjectDirXP3Archives
+// Mounts all .xp3 archives found directly inside TVPProjectDir.
+// This handles the common krkr2 game layout where startup.tjs and all
+// game resources are packed inside data.xp3 / patch.xp3 in the game root.
+// Must be called before TVPInitializeStartupScript().
 //---------------------------------------------------------------------------
 static std::vector<ttstr> TVPAutoMountedPaths;
+
+void TVPAutoMountProjectDirXP3Archives() {
+    // Strip trailing slashes to get the plain project directory path
+    tjs_int len = TVPProjectDir.GetLen();
+    while(len > 0 && (TVPProjectDir[len - 1] == TJS_W('/') ||
+                      TVPProjectDir[len - 1] == TVPArchiveDelimiter))
+        len--;
+    if(len == 0) return;
+
+    ttstr projDir = TVPProjectDir.SubString(0, len);
+
+    // Resolve to a native filesystem path
+    ttstr nativeProjDir = projDir;
+    try {
+        TVPGetLocalName(nativeProjDir);
+    } catch(...) {
+        spdlog::warn("AutoMountProjectDir: could not resolve native path for '{}'",
+                      projDir.AsStdString());
+        return;
+    }
+
+    std::string nativePath = nativeProjDir.AsStdString();
+    spdlog::info("AutoMountProjectDir: scanning '{}' for .xp3 archives", nativePath);
+
+    // Build the storage-system path for the project directory (with trailing /)
+    ttstr projStoragePath = projDir + TJS_W("/");
+
+    DIR *dirp = opendir(nativePath.c_str());
+    if(!dirp) {
+        spdlog::warn("AutoMountProjectDir: opendir failed for '{}', errno={}",
+                      nativePath, errno);
+        return;
+    }
+
+    // Collect .xp3 filenames
+    std::vector<std::string> xp3Names;
+    struct dirent *dp;
+    while((dp = readdir(dirp))) {
+        std::string name = dp->d_name;
+        if(name.size() < 5) continue;
+        std::string ext = name.substr(name.size() - 4);
+        for(auto &c : ext) c = (char)tolower((unsigned char)c);
+        if(ext != ".xp3") continue;
+        xp3Names.push_back(name);
+    }
+    closedir(dirp);
+
+    if(xp3Names.empty()) {
+        spdlog::info("AutoMountProjectDir: no .xp3 archives found");
+        return;
+    }
+
+    // Sort: "data" before "patch" before anything else (alphabetical)
+    std::sort(xp3Names.begin(), xp3Names.end());
+
+    for(const auto &xp3Name : xp3Names) {
+        ttstr archivePath = projStoragePath + ttstr(xp3Name.c_str());
+        archivePath = TVPNormalizeStorageName(archivePath);
+
+        tTVPArchive *arc = nullptr;
+        try {
+            arc = TVPOpenArchive(archivePath, true);
+        } catch(...) {
+            spdlog::warn("AutoMountProjectDir: failed to open '{}'",
+                          archivePath.AsStdString());
+            continue;
+        }
+        if(!arc) continue;
+
+        // Collect every unique directory prefix in this archive
+        std::set<std::u16string> dirPaths;
+        dirPaths.insert(std::u16string());
+
+        tjs_uint fileCount = arc->GetCount();
+        for(tjs_uint i = 0; i < fileCount; i++) {
+            ttstr fname = arc->GetName(i);
+            const tjs_char *s = fname.c_str();
+            tjs_int flen = fname.GetLen();
+            for(tjs_int j = 0; j < flen; j++) {
+                if(s[j] == TJS_W('/')) {
+                    std::u16string d(
+                        reinterpret_cast<const char16_t *>(s),
+                        static_cast<size_t>(j + 1));
+                    dirPaths.insert(d);
+                }
+            }
+        }
+        arc->Release();
+
+        tjs_char delimStr[2] = { TVPArchiveDelimiter, 0 };
+        ttstr archiveBase = archivePath + ttstr(delimStr);
+
+        for(const auto &d : dirPaths) {
+            ttstr dirStr(reinterpret_cast<const tjs_char *>(d.c_str()),
+                         static_cast<tjs_int>(d.size()));
+            ttstr autoPath = archiveBase + dirStr;
+            try {
+                TVPAddAutoPath(autoPath);
+                TVPAutoMountedPaths.push_back(TVPNormalizeStorageName(autoPath));
+            } catch(...) {}
+        }
+
+        TVPAddImportantLog(
+            ttstr(TJS_W("(info) Auto-mounted project archive: ")) +
+            archivePath + ttstr(TJS_W(" (")) +
+            ttstr((tjs_int)dirPaths.size()) + ttstr(TJS_W(" dirs, ")) +
+            ttstr((tjs_int)fileCount) + ttstr(TJS_W(" files)")));
+        spdlog::info("AutoMountProjectDir: mounted '{}' ({} dirs, {} files)",
+                      archivePath.AsStdString(), dirPaths.size(), fileCount);
+    }
+}
+
+//---------------------------------------------------------------------------
+// TVPAutoMountSiblingXP3Archives
+//---------------------------------------------------------------------------
 
 void TVPAutoMountSiblingXP3Archives() {
     if(TVPProjectDir.GetLastChar() != TJS_W('/'))

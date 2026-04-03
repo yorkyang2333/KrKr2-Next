@@ -294,6 +294,7 @@ tjs_uint TVPGetAutoPathTableCount();
 extern tjs_uint TVPSegmentCacheLimit; // XP3 segment cache limit, in bytes.
 tjs_uint TVPGetXP3SegmentCacheTotalBytes();
 
+void TVPAutoMountProjectDirXP3Archives();
 void TVPAutoMountSiblingXP3Archives();
 void TVPBoostAutoMountPaths();
 

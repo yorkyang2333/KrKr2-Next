@@ -12,6 +12,15 @@
 
 #include "UtilStreams.h"
 #include "MsgIntf.h"
+
+#ifdef __APPLE__
+extern "C" {
+    int blake2sp_init(void *state, size_t outlen) { return -1; }
+    int blake2sp_update(void *state, const void *in, size_t inlen) { return -1; }
+    int blake2sp_final(void *state, void *out, size_t outlen) { return -1; }
+}
+#endif
+
 #include "DebugIntf.h"
 
 #include "TVPMmapAlloc.h"
