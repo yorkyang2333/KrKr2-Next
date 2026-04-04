@@ -82,8 +82,10 @@ static tTVPAtExit TVPShutdownVideoOverlayAtExit(TVP_ATEXIT_PRI_PREPARE,
 //---------------------------------------------------------------------------
 // tTJSNI_VideoOverlay
 //---------------------------------------------------------------------------
+//---------------------------------------------------------------------------
 tTJSNI_VideoOverlay::tTJSNI_VideoOverlay() :
     EventQueue(this, &tTJSNI_VideoOverlay::WndProc) {
+    TVPAddVideOverlay(this);
     VideoOverlay = nullptr;
     Rect.left = 0;
     Rect.top = 0;
@@ -107,6 +109,10 @@ tTJSNI_VideoOverlay::tTJSNI_VideoOverlay() :
 
     Bitmap[0] = Bitmap[1] = nullptr;
     BmpBits[0] = BmpBits[1] = nullptr;
+}
+//---------------------------------------------------------------------------
+tTJSNI_VideoOverlay::~tTJSNI_VideoOverlay() {
+    TVPRemoveVideoOverlay(this);
 }
 //---------------------------------------------------------------------------
 tjs_error tTJSNI_VideoOverlay::Construct(tjs_int numparams, tTJSVariant **param,

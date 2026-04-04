@@ -68,6 +68,7 @@ class tTJSNI_VideoOverlay : public tTJSNI_BaseVideoOverlay {
 
 public:
     tTJSNI_VideoOverlay();
+    ~tTJSNI_VideoOverlay() override;
     tjs_error Construct(tjs_int numparams, tTJSVariant **param,
                         iTJSDispatch2 *tjs_obj) override;
     void Invalidate() override;
