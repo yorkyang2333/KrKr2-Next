@@ -8053,10 +8053,13 @@ tTJSNC_Layer::tTJSNC_Layer() : tTJSNativeClass(TJS_W("Layer")) {
     TJS_END_NATIVE_CONSTRUCTOR_DECL(/*TJS class name*/ Layer)
     //----------------------------------------------------------------------
 
-    //-- methods
-
     //----------------------------------------------------------------------
-
+    TJS_BEGIN_NATIVE_METHOD_DECL(/*func. name*/ captureCanvas) {
+        if(result)
+            result->Clear();
+        return TJS_S_OK;
+    }
+    TJS_END_NATIVE_METHOD_DECL(/*func. name*/ captureCanvas)
     //----------------------------------------------------------------------
     // 在合适的位置，例如其他 Layer 方法绑定之后
     //----------------------------------------------------------------------

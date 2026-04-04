@@ -163,6 +163,7 @@ void layerExMovie::openMovie(const tjs_char *filename, bool alpha) {
         ttstr error = filename;
         error += TJS_W(":ファイルが開けません");
         TVPAddLog(error);
+        TVPThrowExceptionMessage(error.c_str());
         return;
     }
     ttstr ext = TVPExtractStorageExt(filename);
@@ -175,6 +176,13 @@ void layerExMovie::openMovie(const tjs_char *filename, bool alpha) {
                          in->GetSize());
     VideoOverlay = pOverlay;
     VideoOverlay->GetVideoSize(&movieWidth, &movieHeight);
+    if(movieWidth <= 0 || movieHeight <= 0) {
+        ttstr error = filename;
+        error += TJS_W(": 動画サイズの取得に失敗しました (Unsupported or missing codec)");
+        TVPAddLog(error);
+        TVPThrowExceptionMessage(error.c_str());
+        return;
+    }
     if(Bitmap[0])
         delete Bitmap[0];
     if(Bitmap[1])

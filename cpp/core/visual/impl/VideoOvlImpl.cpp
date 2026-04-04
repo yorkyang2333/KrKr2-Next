@@ -186,26 +186,22 @@ void tTJSNI_VideoOverlay::Open(const ttstr &_name) {
                 CachedOverlay->Release();
                 CachedOverlay = nullptr;
             }
-            if(Mode == vomLayer)
-                GetVideoLayerObject(EventQueue.GetOwner(), istream,
-                                    name.c_str(), ext.c_str(), size,
-                                    &VideoOverlay);
-            else if(Mode == vomMixer)
-                GetMixingVideoOverlayObject(EventQueue.GetOwner(), istream,
-                                            name.c_str(), ext.c_str(), size,
-                                            &VideoOverlay);
-            else if(Mode == vomMFEVR)
+            // Initialize appropriate video player backend based on modes.
+            // On macOS (Flutter), true HWND overlays (vomOverlay) are impossible.
+            // We instead route *all* modes through GetVideoLayerObject to keep them as CPU-decodable streams,
+            // and handle their composite manually in WndProc.
+            if (Mode == vomMFEVR) {
                 GetMFVideoOverlayObject(EventQueue.GetOwner(), istream,
                                         name.c_str(), ext.c_str(), size,
                                         &VideoOverlay);
-            else
-                GetVideoOverlayObject(EventQueue.GetOwner(), istream,
-                                      name.c_str(), ext.c_str(), size,
-                                      &VideoOverlay);
+            } else {
+                GetVideoLayerObject(EventQueue.GetOwner(), istream,
+                                    name.c_str(), ext.c_str(), size,
+                                    &VideoOverlay);
+            }
         }
-        if((Mode == vomOverlay) || (Mode == vomMixer) || (Mode == vomMFEVR)) {
-            ResetOverlayParams();
-        } else { // set font and back buffer to layerVideo
+        // Initialize layer buffers for decoded video output for ALL modes
+        {
             long width, height;
             long size;
             VideoOverlay->GetVideoSize(&width, &height);
@@ -215,17 +211,15 @@ void tTJSNI_VideoOverlay::Open(const ttstr &_name) {
                                          (const tjs_char *)TVPInvalidVideoSize);
 
             size = width * height * 4;
-            if(Bitmap[0] != nullptr)
-                delete Bitmap[0];
-            if(Bitmap[1] != nullptr)
-                delete Bitmap[1];
             Bitmap[0] = new tTVPBaseTexture(width, height, 32);
             Bitmap[1] = new tTVPBaseTexture(width, height, 32);
-#if 0
-			BmpBits[0] = static_cast<BYTE*>(Bitmap[0]->GetBitmap()->GetScanLine( Bitmap[0]->GetBitmap()->GetHeight()-1 ));
-			BmpBits[1] = static_cast<BYTE*>(Bitmap[1]->GetBitmap()->GetScanLine( Bitmap[1]->GetBitmap()->GetHeight()-1 ));
-#endif
+
             VideoOverlay->SetVideoBuffer(Bitmap[0], Bitmap[1], size);
+        }
+
+        if((Mode == vomOverlay) || (Mode == vomMixer) || (Mode == vomMFEVR)) {
+            // Apply bounds handling that was necessary for overlay natively
+            ResetOverlayParams();
         }
     } catch(...) {
         if(istream)
@@ -544,73 +538,51 @@ void tTJSNI_VideoOverlay::WndProc(NativeEvent &ev) {
                             }
                             break;
                         case EC_UPDATE:
-                            if(Mode == vomLayer && Status == ssPlay) {
+                            if(Status == ssPlay) {
                                 int curFrame = (int)ev.LParam;
-                                if(Layer1 == nullptr &&
-                                   Layer2 == nullptr) // nothing to do.
-                                    return;
-
-                                // 2フレーム以上差があるときはGetFrame()
-                                // を現在のフレームとする
-                                int frame = GetFrame();
-                                if((frame + 1) < curFrame ||
-                                   (frame - 1) > curFrame)
-                                    curFrame = frame;
-
-                                if((!IsPrepare) && (SegLoopEndFrame > 0) &&
-                                   (frame >= SegLoopEndFrame)) {
-                                    SetFrame(SegLoopStartFrame > 0
-                                                 ? SegLoopStartFrame
-                                                 : 0);
-                                    FirePeriodEvent(perSegLoop); // fire period
-                                                                 // event by
-                                                                 // segment loop
-                                                                 // rewind
-                                    return; // Updateを行わない
-                                }
-
+                                
                                 // get video image size
                                 long width, height;
                                 VideoOverlay->GetVideoSize(&width, &height);
 
-                                tTJSNI_BaseLayer *l1 = Layer1;
-                                tTJSNI_BaseLayer *l2 = Layer2;
-
-                                // Check layer image size
-                                if(l1 != nullptr) {
-                                    if((long)l1->GetImageWidth() != width ||
-                                       (long)l1->GetImageHeight() != height)
-                                        l1->SetImageSize(width, height);
-                                    if((long)l1->GetWidth() != width ||
-                                       (long)l1->GetHeight() != height)
-                                        l1->SetSize(width, height);
-                                }
-                                if(l2 != nullptr) {
-                                    if((long)l2->GetImageWidth() != width ||
-                                       (long)l2->GetImageHeight() != height)
-                                        l2->SetImageSize(width, height);
-                                    if((long)l2->GetWidth() != width ||
-                                       (long)l2->GetHeight() != height)
-                                        l2->SetSize(width, height);
-                                }
                                 tTVPBaseTexture *buff =
                                     VideoOverlay->GetFrontBuffer();
-                                if(buff == Bitmap[0]) {
-                                    if(l1)
-                                        l1->AssignMainImage(Bitmap[0]);
-                                    if(l2)
-                                        l2->AssignMainImage(Bitmap[0]);
-                                } else // 0じゃなかったら、1とみなす。
-                                {
-                                    if(l1)
-                                        l1->AssignMainImage(Bitmap[1]);
-                                    if(l2)
-                                        l2->AssignMainImage(Bitmap[1]);
+                                
+                                bool processed = false;
+                                if(Layer1 != nullptr) {
+                                    Layer1->AssignMainImage(buff);
+                                    processed = true;
                                 }
-                                if(l1)
-                                    l1->Update();
-                                if(l2)
-                                    l2->Update();
+                                if(Layer2 != nullptr) {
+                                    Layer2->AssignMainImage(buff);
+                                    processed = true;
+                                }
+                                if (!processed && Window != nullptr) {
+                                    // NATIVE FALLBACK FOR vomOverlay ON macOS:
+                                    // Instead of a standalone window, we forcefully blit the decoded video frame
+                                    // right onto the very bottom of the game UI hierarchy (PrimaryLayer).
+                                    tTJSNI_BaseLayer *pri = Window->GetDrawDevice() ? Window->GetDrawDevice()->GetPrimaryLayer() : nullptr;
+                                    if (pri && buff) {
+                                        iTVPTexture2D *src = buff->GetTexture();
+                                        if (pri->GetMainImage()) {
+                                            iTVPTexture2D *dst = pri->GetMainImage()->GetTextureForRender(false, nullptr);
+                                            if (src && dst) {
+                                                // Scale to fit the target primary layer (equivalent to fullscreen overlay stretch)
+                                                tTVPRect rcdst(0, 0, pri->GetWidth(), pri->GetHeight());
+                                                tTVPRect rcsrc(0, 0, buff->GetWidth(), buff->GetHeight());
+                                                iTVPRenderMethod *method = TVPGetRenderManager()->GetRenderMethod("Copy");
+                                                tRenderTexRectArray::Element src_tex[] = { tRenderTexRectArray::Element(src, rcsrc) };
+                                                TVPGetRenderManager()->OperateRect(method, dst, nullptr, rcdst, src_tex);
+                                                Window->RequestUpdate();
+                                            }
+                                        }
+                                    }
+                                }
+
+                                if(Layer1)
+                                    Layer1->Update();
+                                if(Layer2)
+                                    Layer2->Update();
                                 FireFrameUpdateEvent(curFrame);
 
                                 // ! Prepare mode ?

@@ -21,6 +21,8 @@
 #include "voMode.h"
 
 #include "NativeEventQueue.h"
+#include "RenderManager.h"
+#include "LayerIntf.h"
 // #include "typedefine.h"
 
 //---------------------------------------------------------------------------

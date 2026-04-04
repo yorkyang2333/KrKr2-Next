@@ -252,6 +252,10 @@ namespace TJS {
 
     //---------------------------------------------------------------------------
     void TJSThrowFrom_tjs_error(tjs_error hr, const tjs_char *name) {
+        if (hr == TJS_E_MEMBERNOTFOUND && name) {
+            ttstr n(name);
+            spdlog::error("[TJSThrowFrom_tjs_error] Member not found: '{}'", n.AsNarrowStdString());
+        }
         // raise an exception descripted as tjs_error
         // name = variable name ( otherwide it can be nullptr )
 

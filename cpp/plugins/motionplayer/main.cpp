@@ -19,6 +19,67 @@ using namespace TJS;
 #define NCB_MODULE_NAME TJS_W("motionplayer.dll")
 #define LOGGER spdlog::get("plugin")
 
+// Forward declarations for stub functions
+static tjs_error D3DAdaptorMissingHandler(tTJSVariant *r, tjs_int count, tTJSVariant **p, iTJSDispatch2 *objthis);
+static tjs_error D3DAdaptorStub_noop(tTJSVariant *, tjs_int, tTJSVariant **, iTJSDispatch2 *);
+
+static tjs_int SafeAsInteger(tTJSVariant *v) {
+    if (!v) return 0;
+    if (v->Type() == tvtObject) return 0;
+    try { return static_cast<tjs_int>(v->AsInteger()); } catch(...) { return 0; }
+}
+
+static tjs_real SafeAsReal(tTJSVariant *v) {
+    if (!v) return 0.0;
+    if (v->Type() == tvtObject) return 0.0;
+    try { return static_cast<tjs_real>(v->AsReal()); } catch(...) { return 0.0; }
+}
+
+extern void TVPAddLog(const ttstr &line);
+
+static tjs_error D3DAdaptorMissingHandler(tTJSVariant *r, tjs_int count, tTJSVariant **p, iTJSDispatch2 *objthis) {
+    if (count < 2) return TJS_E_INVALIDPARAM;
+    bool isSet = SafeAsInteger(p[0]) != 0;
+    
+    ttstr memberName = *p[1];
+    TVPAddLog(TJS_W("KrKr2-Next Missing property accessed: ") + memberName);
+    if (auto l = LOGGER) {
+        l->error("Missing member accessed: {}", memberName.AsStdString());
+        l->flush();
+    }
+    
+    // Hardcode some known primitive properties to 0 to prevent to-int cast crashes
+    if (memberName == TJS_W("clearColor") || memberName == TJS_W("bgColor") || memberName == TJS_W("neutralColor") || 
+        memberName == TJS_W("opacity") || memberName == TJS_W("alpha") ||
+        memberName == TJS_W("width") || memberName == TJS_W("height") ||
+        memberName == TJS_W("clearEnabled") || memberName == TJS_W("canvasCaptureEnabled")) {
+        if (r) *r = tTJSVariant((tjs_int)0);
+        return TJS_S_OK;
+    }
+
+    if (!isSet && r) {
+        // If it starts with 'on', it's likely an event handler callback, so return NoOp
+        if (memberName.StartsWith(TJS_W("on"))) {
+            class NoOpFunc : public tTJSDispatch {
+            public:
+                tjs_error FuncCall(tjs_uint32, const tjs_char *, tjs_uint32 *, tTJSVariant *res, tjs_int, tTJSVariant **, iTJSDispatch2 *) override {
+                    if (res) res->Clear();
+                    return TJS_S_OK;
+                }
+            };
+            auto *func = new NoOpFunc();
+            *r = tTJSVariant(func, func);
+            func->Release();
+        } else {
+            // For all other unknown properties, return 0 to satisfy numeric evaluations
+            *r = tTJSVariant((tjs_int)0);
+        }
+    }
+    return TJS_S_OK;
+}
+
+static tjs_error D3DAdaptorStub_noop(tTJSVariant *, tjs_int, tTJSVariant **, iTJSDispatch2 *) { return TJS_S_OK; }
+
 static motion::SeparateLayerAdaptor *GetSeparateLayerAdaptorInstance(iTJSDispatch2 *objthis) {
     return ncbInstanceAdaptor<motion::SeparateLayerAdaptor>::GetNativeInstance(objthis);
 }
@@ -226,6 +287,25 @@ static tjs_error Player_setUseD3D(tTJSVariant *, tjs_int count, tTJSVariant **p,
         motion::Player::setUseD3D(static_cast<bool>(**p));
     return TJS_S_OK;
 }
+
+// Player_getTags: returns an empty TJS Array for the Windows-only "tags" property.
+// Game script accesses player.tags.count, which requires a proper Array object.
+static tjs_error Player_getTags(tTJSVariant *r, tjs_int, tTJSVariant **, iTJSDispatch2 *) {
+    if (r) {
+        iTJSDispatch2 *arr = TJSCreateArrayObject();
+        if (arr) { *r = tTJSVariant(arr, arr); arr->Release(); }
+        else r->Clear();
+    }
+    return TJS_S_OK;
+}
+
+// Player_getZero: returns (int)0 for properties that are expected to be scalar values
+// rather than callable functions. (e.g. times, boolean flags).
+static tjs_error Player_getZero(tTJSVariant *r, tjs_int, tTJSVariant **, iTJSDispatch2 *) {
+    if (r) *r = tTJSVariant((tjs_int)0);
+    return TJS_S_OK;
+}
+
 static tjs_error Player_getEnableD3D(tTJSVariant *r, tjs_int, tTJSVariant **, iTJSDispatch2 *) {
     iTJSDispatch2 *obj = TJSCreateDictionaryObject();
     if (obj) {
@@ -348,7 +428,7 @@ static tjs_error Player_setSpeed(tTJSVariant *, tjs_int count, tTJSVariant **p,
                                  iTJSDispatch2 *objthis) {
     auto *player = GetPlayerInstance(objthis);
     if(!player || count < 1) return TJS_E_INVALIDPARAM;
-    player->setSpeed(static_cast<tjs_real>(p[0]->AsReal()));
+    player->setSpeed(SafeAsReal(p[0]));
     return TJS_S_OK;
 }
 
@@ -389,7 +469,7 @@ static tjs_error Player_progress(tTJSVariant *, tjs_int count, tTJSVariant **p,
                                  iTJSDispatch2 *objthis) {
     auto *player = GetPlayerInstance(objthis);
     if(!player || count < 1) return TJS_E_INVALIDPARAM;
-    player->progress(static_cast<tjs_int>(p[0]->AsInteger()));
+    player->progress(SafeAsInteger(p[0]));
     return TJS_S_OK;
 }
 
@@ -406,8 +486,8 @@ static tjs_error Player_setDrawAffineTranslateMatrix(tTJSVariant *, tjs_int coun
     auto *player = GetPlayerInstance(objthis);
     if(!player || count < 6) return TJS_E_INVALIDPARAM;
     player->setDrawAffineTranslateMatrix(
-        p[0]->AsReal(), p[1]->AsReal(), p[2]->AsReal(),
-        p[3]->AsReal(), p[4]->AsReal(), p[5]->AsReal());
+        SafeAsReal(p[0]), SafeAsReal(p[1]), SafeAsReal(p[2]),
+        SafeAsReal(p[3]), SafeAsReal(p[4]), SafeAsReal(p[5]));
     return TJS_S_OK;
 }
 
@@ -415,8 +495,7 @@ static tjs_error Player_setCoord(tTJSVariant *, tjs_int count, tTJSVariant **p,
                                  iTJSDispatch2 *objthis) {
     auto *player = GetPlayerInstance(objthis);
     if(!player || count < 2) return TJS_E_INVALIDPARAM;
-    player->setCoord(static_cast<tjs_real>(p[0]->AsReal()),
-                     static_cast<tjs_real>(p[1]->AsReal()));
+    player->setCoord(SafeAsReal(p[0]), SafeAsReal(p[1]));
     return TJS_S_OK;
 }
 
@@ -424,8 +503,7 @@ static tjs_error Player_contains(tTJSVariant *r, tjs_int count, tTJSVariant **p,
                                  iTJSDispatch2 *objthis) {
     auto *player = GetPlayerInstance(objthis);
     if(!player || count < 2) return TJS_E_INVALIDPARAM;
-    if(r) *r = tTJSVariant(player->contains(static_cast<tjs_int>(p[0]->AsInteger()),
-                                            static_cast<tjs_int>(p[1]->AsInteger())));
+    if(r) *r = tTJSVariant(player->contains(SafeAsInteger(p[0]), SafeAsInteger(p[1])));
     return TJS_S_OK;
 }
 
@@ -482,7 +560,7 @@ static tjs_error Player_clear(tTJSVariant *, tjs_int count, tTJSVariant **p,
     if(sClearCount <= 5 || sClearCount % 300 == 0) {
         if(auto l = LOGGER) l->info("Player_clear: callCount={}", sClearCount);
     }
-    player->clear(p[0]->AsObjectNoAddRef(), static_cast<tjs_int>(p[1]->AsInteger()));
+    player->clear(p[0]->AsObjectNoAddRef(), SafeAsInteger(p[1]));
     return TJS_S_OK;
 }
 
@@ -502,8 +580,41 @@ static tjs_error Player_draw(tTJSVariant *, tjs_int count, tTJSVariant **p,
     return TJS_S_OK;
 }
 
+static tjs_error Player_Factory(
+        motion::Player **result, tjs_int /*numparams*/, tTJSVariant ** /*param*/,
+        iTJSDispatch2 *objthis) {
+
+    static bool s_dumped = false;
+    if (!s_dumped) {
+        s_dumped = true;
+        try {
+            extern iTJSTextReadStream *TVPCreateTextStreamForRead(const ttstr &name, const ttstr &mode);
+            iTJSTextReadStream *stream = TVPCreateTextStreamForRead(TJS_W("affinesourcemotion.tjs"), TJS_W(""));
+            if (stream) {
+                ttstr content;
+                stream->Read(content, 999999);
+                delete stream;
+                
+                std::string utf8_content = content.AsNarrowStdString();
+                FILE *f = fopen("/tmp/affinesourcemotion.tjs", "wb");
+                if (f) {
+                    fwrite(utf8_content.c_str(), 1, utf8_content.size(), f);
+                    fclose(f);
+                }
+            }
+        } catch (...) {}
+    }
+
+    *result = new motion::Player();
+    if (objthis) {
+        tTJSVariant m(TJS_W("missing"));
+        objthis->ClassInstanceInfo(TJS_CII_SET_MISSING, 0, &m);
+    }
+    return TJS_S_OK;
+}
+
 NCB_REGISTER_SUBCLASS_DELAY(Player) {
-    NCB_CONSTRUCTOR(());
+    RawCallback(Player_Factory);
     NCB_PROPERTY_RAW_CALLBACK(useD3D, Player_getUseD3D, Player_setUseD3D, TJS_STATICMEMBER);
     NCB_PROPERTY_RAW_CALLBACK(enableD3D, Player_getEnableD3D, Player_setEnableD3D, TJS_STATICMEMBER);
     NCB_PROPERTY_RAW_CALLBACK_RO(playing, Player_getPlaying, 0);
@@ -528,11 +639,40 @@ NCB_REGISTER_SUBCLASS_DELAY(Player) {
     NCB_METHOD_RAW_CALLBACK(draw, Player_draw, 0);
     NCB_METHOD_RAW_CALLBACK(setVariable, Player_setVariable, 0);
     NCB_METHOD_RAW_CALLBACK(getVariable, Player_getVariable, 0);
+    // Windows-only properties that return structured data (need explicit stubs):
+    // "tags" is accessed as player.tags.count — must return Array (not noop func).
+    NCB_PROPERTY_RAW_CALLBACK_RO(tags, Player_getTags, 0);
+    // These properties are used in math/boolean expressions, so returning a function object
+    // via missing() throws a type conversion error. They must return a scalar (0/false).
+    NCB_PROPERTY_RAW_CALLBACK_RO(loopTime, Player_getZero, 0);
+    NCB_PROPERTY_RAW_CALLBACK_RO(isPlayingMainTimeline, Player_getZero, 0);
+    NCB_PROPERTY_RAW_CALLBACK_RO(animating, Player_getZero, 0);
+    // Catch-all: any remaining Windows-only member silently handled via TJS "missing".
+    NCB_METHOD_RAW_CALLBACK(missing, D3DAdaptorMissingHandler, 0);
+    NCB_METHOD_RAW_CALLBACK(finalize, D3DAdaptorStub_noop, 0);
+}
+
+static tjs_error EmotePlayer_Factory(
+        motion::EmotePlayer **result, tjs_int numparams, tTJSVariant **param,
+        iTJSDispatch2 *objthis) {
+    motion::ResourceManager *rm = nullptr;
+    if (numparams >= 1 && param && param[0]->Type() == tvtObject) {
+        rm = ncbInstanceAdaptor<motion::ResourceManager>::GetNativeInstance(
+                param[0]->AsObjectNoAddRef());
+    }
+    *result = new motion::EmotePlayer(rm ? *rm : motion::ResourceManager());
+    if (objthis) {
+        tTJSVariant m(TJS_W("missing"));
+        objthis->ClassInstanceInfo(TJS_CII_SET_MISSING, 0, &m);
+    }
+    return TJS_S_OK;
 }
 
 NCB_REGISTER_SUBCLASS_DELAY(EmotePlayer) {
-    NCB_CONSTRUCTOR((ResourceManager));
+    RawCallback(EmotePlayer_Factory);
     NCB_PROPERTY(useD3D, getUseD3D, setUseD3D);
+    NCB_METHOD_RAW_CALLBACK(missing, D3DAdaptorMissingHandler, 0);
+    NCB_METHOD_RAW_CALLBACK(finalize, D3DAdaptorStub_noop, 0);
 }
 
 static tjs_error ResourceManager_unload(tTJSVariant *, tjs_int count, tTJSVariant **p,
@@ -621,6 +761,29 @@ private:
     inline static bool _enableD3D;
 };
 
+class D3DAdaptorStub {
+public:
+    D3DAdaptorStub() = default;
+    virtual ~D3DAdaptorStub() = default;
+};
+
+static tjs_error D3DAdaptorStub_Factory(
+        D3DAdaptorStub **result, tjs_int /*numparams*/, tTJSVariant ** /*param*/,
+        iTJSDispatch2 *objthis) {
+    *result = new D3DAdaptorStub();
+    if (objthis) {
+        tTJSVariant m(TJS_W("missing"));
+        objthis->ClassInstanceInfo(TJS_CII_SET_MISSING, 0, &m);
+    }
+    return TJS_S_OK;
+}
+
+NCB_REGISTER_SUBCLASS_DELAY(D3DAdaptorStub) {
+    RawCallback(D3DAdaptorStub_Factory);
+    NCB_METHOD_RAW_CALLBACK(missing, D3DAdaptorMissingHandler, 0);
+    NCB_METHOD_RAW_CALLBACK(finalize, D3DAdaptorStub_noop, 0);
+}
+
 NCB_REGISTER_CLASS(Motion) {
     NCB_PROPERTY_RAW_CALLBACK(enableD3D, Motion::getEnableD3D,
                               Motion::setEnableD3D, TJS_STATICMEMBER);
@@ -633,11 +796,20 @@ NCB_REGISTER_CLASS(Motion) {
     NCB_SUBCLASS(Player, Player);
     NCB_SUBCLASS(EmotePlayer, EmotePlayer);
     NCB_SUBCLASS(SeparateLayerAdaptor, SeparateLayerAdaptor);
+    NCB_SUBCLASS(D3DAdaptor, D3DAdaptorStub);
 }
 
-static void PreRegistCallback() {}
+struct LayerCaptureCanvasStub {};
+
+static tjs_error Layer_captureCanvas(tTJSVariant *r, tjs_int count, tTJSVariant **p, iTJSDispatch2 *objthis) {
+    if(r) r->Clear();
+    return TJS_S_OK;
+}
+
+NCB_ATTACH_CLASS_WITH_HOOK(LayerCaptureCanvasStub, Layer) {
+    NCB_METHOD_RAW_CALLBACK(captureCanvas, Layer_captureCanvas, 0);
+}
 
 static void PostUnregistCallback() {}
 
-NCB_PRE_REGIST_CALLBACK(PreRegistCallback);
 NCB_POST_UNREGIST_CALLBACK(PostUnregistCallback);

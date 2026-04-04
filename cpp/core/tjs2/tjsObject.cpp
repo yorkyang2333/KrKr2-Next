@@ -1251,6 +1251,14 @@ namespace TJS {
                                               numparams, param, objthis);
             }
 
+            if (TJS_strcmp(membername, TJS_W("captureCanvas")) == 0 ||
+                TJS_strcmp(membername, TJS_W("unloadUnusedTextures")) == 0 ||
+                TJS_strcmp(membername, TJS_W("outline")) == 0 ||
+                TJS_strcmp(membername, TJS_W("variableKeys")) == 0) {
+                if (result) result->Clear(); // Return void for function call
+                return TJS_S_OK;
+            }
+
             return TJS_E_MEMBERNOTFOUND; // member not found
         }
 
@@ -1334,8 +1342,40 @@ namespace TJS {
             data = Add(membername, hint);
         }
 
-        if(!data)
+        if(!data) {
+            if (TJS_strcmp(membername, TJS_W("captureCanvas")) == 0 ||
+                TJS_strcmp(membername, TJS_W("unloadUnusedTextures")) == 0 ||
+                TJS_strcmp(membername, TJS_W("variableKeys")) == 0) {
+                class DummyCapture : public tTJSDispatch {
+                public:
+                    tjs_error FuncCall(tjs_uint32 flag, const tjs_char * membername, tjs_uint32 *hint, tTJSVariant *result, tjs_int numparams, tTJSVariant **param, iTJSDispatch2 *objthis) override {
+                        if (result) result->Clear(); // Return undefined
+                        return TJS_S_OK;
+                    }
+                    tjs_error PropGet(tjs_uint32 flag, const tjs_char *membername, tjs_uint32 *hint, tTJSVariant *result, iTJSDispatch2 *objthis) override {
+                        if (result) {
+                            if (membername && TJS_strcmp(membername, TJS_W("count")) == 0) {
+                                *result = tTJSVariant(0);
+                            } else {
+                                *result = tTJSVariant(this, this);
+                            }
+                        }
+                        return TJS_S_OK;
+                    }
+                    tjs_error PropSet(tjs_uint32 flag, const tjs_char *membername, tjs_uint32 *hint, const tTJSVariant *param, iTJSDispatch2 *objthis) override {
+                        return TJS_S_OK;
+                    }
+                };
+                static iTJSDispatch2 *dummyObj = new DummyCapture();
+                if (result) *result = tTJSVariant(dummyObj, dummyObj);
+                return TJS_S_OK;
+            }
+            if (TJS_strcmp(membername, TJS_W("outline")) == 0) {
+                if (result) *result = tTJSVariant(0);
+                return TJS_S_OK;
+            }
             return TJS_E_MEMBERNOTFOUND; // not found
+        }
 
         return TJSDefaultPropGet(flag, GetValue(data), result, objthis);
     }
@@ -1408,8 +1448,15 @@ namespace TJS {
         else
             data = Find(membername, hint);
 
-        if(!data)
+        if(!data) {
+            if (TJS_strcmp(membername, TJS_W("captureCanvas")) == 0 ||
+                TJS_strcmp(membername, TJS_W("unloadUnusedTextures")) == 0 ||
+                TJS_strcmp(membername, TJS_W("outline")) == 0 ||
+                TJS_strcmp(membername, TJS_W("variableKeys")) == 0) {
+                return TJS_S_OK; // Ignore set for unimplemented missing fallback properties
+            }
             return TJS_E_MEMBERNOTFOUND; // not found
+        }
 
         if(flag & TJS_HIDDENMEMBER)
             data->SymFlags |= TJS_SYMBOL_HIDDEN;
@@ -1501,8 +1548,16 @@ namespace TJS {
         else
             data = Find((const tjs_char *)(*membername), membername->GetHint());
 
-        if(!data)
+        if(!data) {
+            const tjs_char* mn = (const tjs_char*)(*membername);
+            if (TJS_strcmp(mn, TJS_W("captureCanvas")) == 0 ||
+                TJS_strcmp(mn, TJS_W("unloadUnusedTextures")) == 0 ||
+                TJS_strcmp(mn, TJS_W("outline")) == 0 ||
+                TJS_strcmp(mn, TJS_W("variableKeys")) == 0) {
+                return TJS_S_OK; // Ignore set for unimplemented missing fallback properties
+            }
             return TJS_E_MEMBERNOTFOUND; // not found
+        }
 
         if(flag & TJS_HIDDENMEMBER)
             data->SymFlags |= TJS_SYMBOL_HIDDEN;
