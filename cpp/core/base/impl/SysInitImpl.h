@@ -15,6 +15,7 @@
 extern void TVPDumpHWException();
 
 extern void TVPInitializeBaseSystems();
+extern void TVPResetProgramArguments();
 
 extern ttstr TVPNativeProjectDir;
 extern ttstr TVPNativeDataPath;

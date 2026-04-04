@@ -41,6 +41,7 @@ void krkr_GetSurfaceDimensions(uint32_t*, uint32_t*);
 #include "base/StorageIntf.h"
 #include "base/SysInitIntf.h"
 #include "base/impl/SysInitImpl.h"
+#include "base/ScriptMgnIntf.h"
 #include "visual/GraphicsLoaderIntf.h"
 #include "visual/ogl/ogl_common.h"
 #include "visual/ogl/krkr_egl_context.h"
@@ -760,14 +761,22 @@ engine_result_t engine_destroy(engine_handle_t handle) {
   }
 
   if (startup_worker.joinable()) {
+    spdlog::info("engine_destroy: joining startup_worker");
     startup_worker.join();
+    spdlog::info("engine_destroy: joined startup_worker");
   }
 
   if (owned_runtime) {
     try {
+      spdlog::info("engine_destroy: Application->OnDeactivate()");
       Application->OnDeactivate();
+      spdlog::info("engine_destroy: Application->OnExit()");
+      Application->OnExit();
     } catch (...) {
+      spdlog::error("engine_destroy: Exception in Application teardown");
     }
+    
+    spdlog::info("engine_destroy: FilterUserMessage");
     Application->FilterUserMessage(
         [](std::vector<std::tuple<void*, int, tTVPApplication::tMsg>>& queue) {
           queue.clear();
@@ -776,8 +785,21 @@ engine_result_t engine_destroy(engine_handle_t handle) {
     // Avoid triggering platform exit() path in the host process.
     TVPTerminated = false;
     TVPTerminateCode = 0;
+
+    // Fully tear down engine state for possible next run.
+    spdlog::info("engine_destroy: TVPSystemUninit()");
+    TVPSystemUninit();
+    spdlog::info("engine_destroy: EngineLoop::DestroyInstance()");
+    EngineLoop::DestroyInstance();
+    spdlog::info("engine_destroy: TVPResetProgramArguments()");
+    TVPResetProgramArguments();
+    spdlog::info("engine_destroy: TVPResetSystemUninit()");
+    TVPResetSystemUninit();
+    spdlog::info("engine_destroy: TVPResetScriptEngineInit()");
+    TVPResetScriptEngineInit();
   }
 
+  spdlog::info("engine_destroy: completed");
   delete impl;
   SetThreadError(nullptr);
   return ENGINE_RESULT_OK;
@@ -829,12 +851,13 @@ engine_result_t engine_open_game(engine_handle_t handle,
     return ENGINE_RESULT_OK;
   }
 
-  if (g_runtime_started_once) {
-    return SetHandleErrorAndReturnLocked(
-        impl,
-        ENGINE_RESULT_NOT_SUPPORTED,
-        "runtime restart is not supported yet; restart process to open another game");
-  }
+  // We used to explicitly block runtime restart.
+  // if (g_runtime_started_once) {
+  //   return SetHandleErrorAndReturnLocked(
+  //       impl,
+  //       ENGINE_RESULT_NOT_SUPPORTED,
+  //       "runtime restart is not supported yet; restart process to open another game");
+  // }
   TVPTerminated = false;
   TVPTerminateCode = 0;
   TVPSystemUninitCalled = false;

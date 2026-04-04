@@ -99,6 +99,13 @@ EngineLoop* EngineLoop::CreateInstance() {
     return s_instance;
 }
 
+void EngineLoop::DestroyInstance() {
+    if (s_instance) {
+        delete s_instance;
+        s_instance = nullptr;
+    }
+}
+
 void EngineLoop::Start() {
     update_enabled_ = true;
 }

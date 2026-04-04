@@ -135,5 +135,12 @@ static void TVPCauseAtExit() {
     }
 
     delete TVPAtExitInfos;
+    TVPAtExitInfos = nullptr;
+}
+//---------------------------------------------------------------------------
+
+void TVPResetSystemUninit() {
+    TVPSystemUninitCalled = false;
+    TVPAtExitShutdown = false;
 }
 //---------------------------------------------------------------------------
