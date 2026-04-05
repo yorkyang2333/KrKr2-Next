@@ -1,0 +1,46 @@
+name: macOS Build
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Install dependencies
+      run: |
+        brew install cmake ninja pkg-config
+
+    - name: Set up Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        channel: 'stable'
+        cache: true
+
+    - name: Build macOS App
+      run: |
+        chmod +x build.sh
+        chmod +x build/build_macos.sh
+        ./build.sh macos release --jobs=4
+
+    - name: Zip app bundle
+      run: |
+        cd apps/flutter_app/build/macos/Build/Products/Release
+        zip -r KrKr2-Next-macOS.zip "KrKr2 Next.app"
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: KrKr2-Next-macOS
+        path: apps/flutter_app/build/macos/Build/Products/Release/KrKr2-Next-macOS.zip
+        retention-days: 7
